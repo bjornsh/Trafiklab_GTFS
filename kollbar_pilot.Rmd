@@ -1,0 +1,166 @@
+---
+title: "Trafiklab GTFS data"
+output: html_document
+---
+
+
+
+```{r, warning=FALSE, message=FALSE}
+#---------------------------------------------------------------------------------------------------
+# set up
+#---------------------------------------------------------------------------------------------------
+
+# clean
+rm(list = ls())
+invisible(gc())
+
+
+options(dplyr.summarise.inform = FALSE)
+
+
+# libraries
+if (!require("pacman")) install.packages("pacman")
+pacman::p_load(tidyverse, sf, sp, httr, mapview)
+
+
+
+# avoid scientific notation
+options(scipen=999)
+
+
+# create directory
+dir.create("data_input")
+dir.create("data_output")
+dir.create("output")
+
+wd = getwd()
+api = "Z:/"
+data_input = paste0(wd,"/data_input")
+data_output = paste0(wd,"/data_output")
+output = paste0(wd,"/output")
+
+
+# todays date, used as filter
+today = str_remove_all(Sys.Date(), "-")
+
+
+## Read API keys
+api_fil <- read_file(paste0(api, "api"))
+
+trafiklab_key = gsub('^.*trafiklab_gtfsstatik: \\s*|\\s*\r.*$', "", api_fil)
+
+# url for GTFS
+url <- paste0("https://opendata.samtrafiken.se/gtfs/ul/ul.zip?key=", trafiklab_key)
+
+```
+
+
+```{r, include=FALSE}
+#---------------------------------------------------------------------------------------------------
+# Fetch data
+#---------------------------------------------------------------------------------------------------
+
+## static GTFS timetable data from Trafiklab
+
+GET(url, write_disk(paste0(data_input, "/trafiklab_ul.zip"), overwrite=TRUE))
+
+unzip(paste0(data_input, "/trafiklab_ul.zip"), exdir = paste0(data_input, "/trafiklab_ul"))
+```
+
+
+
+
+```{r, warning=FALSE, message=FALSE}
+
+#---------------------------------------------------------------------------------------------------
+# load data
+#---------------------------------------------------------------------------------------------------
+
+routes = read.csv2(paste0(data_input, "/trafiklab_ul/routes.txt"), 
+                   sep = ",", encoding="UTF-8", stringsAsFactors=FALSE)
+
+stops = read.csv2(paste0(data_input, "/trafiklab_ul/stops.txt"), 
+                  sep = ",", encoding="UTF-8", stringsAsFactors=FALSE)
+
+stop_times = read.csv2(paste0(data_input, "/trafiklab_ul/stop_times.txt"), 
+                       sep = ",", encoding="UTF-8", stringsAsFactors=FALSE)
+
+trips = read.csv2(paste0(data_input, "/trafiklab_ul/trips.txt"), 
+                  sep = ",", encoding="UTF-8", stringsAsFactors=FALSE)
+
+calendar_dates = read.csv2(paste0(data_input, "/trafiklab_ul/calendar_dates.txt"), 
+                           sep = ",", encoding="UTF-8", stringsAsFactors=FALSE)
+
+
+
+### Create filter variables
+
+# service_id för rätt datum
+service_id_inklud = calendar_dates %>% filter(date == today) %>% select(service_id) %>% pull()
+
+# trips för rätt datum
+trips_inklud = trips %>% filter(service_id %in% service_id_inklud) %>% select(trip_id) %>% pull()
+
+
+
+
+#---------------------------------------------------------------------------------------------------
+# Merge gtfs tables
+#---------------------------------------------------------------------------------------------------
+
+gtfs = stop_times %>%  
+  left_join(., trips, by = "trip_id") %>%
+  left_join(., stops, by = "stop_id") %>%
+  left_join(., routes, by = "route_id") %>%
+  mutate(hpl_id = substr(stop_id, 8, 13)) %>% 
+  filter(trip_id %in% trips_inklud) %>%  # remove all rows referring to other dates
+  distinct(arrival_time, departure_time, stop_id, .keep_all= TRUE) # remove duplicates
+```
+
+
+```{r, warning=FALSE, message=FALSE}
+#---------------------------------------------------------------------------------------------------
+# Data hantering
+#---------------------------------------------------------------------------------------------------
+
+antal_departure = gtfs %>% 
+  group_by(hpl_id) %>% 
+  summarise(antal_dep = n())
+
+antal_linjer = gtfs %>% 
+  distinct(hpl_id, route_short_name) %>% 
+  group_by(hpl_id) %>% 
+  summarise(antal_linjer = n())
+
+
+## Tidtabelldata är på hållplatslägenivå. Ta medel för att skapa en koordinat per hållplats
+hpl_koord = gtfs %>% 
+  group_by(hpl_id, stop_name) %>% 
+  summarise(lat = round(mean(as.numeric(stop_lat)), 5), lon = round(mean(as.numeric(stop_lon)), 5)) %>% 
+  ungroup() %>% 
+  left_join(antal_departure, by = "hpl_id") %>% 
+  left_join(antal_linjer, by = "hpl_id") %>% 
+  mutate(antal_dep_log = log(as.numeric(antal_dep)))
+
+xy_gtfs = hpl_koord[,c("lon", "lat")]
+
+spdf <- SpatialPointsDataFrame(coords = xy_gtfs, data = hpl_koord) # create spatial points
+
+spdf1 = st_as_sf(spdf) %>% # convert to sf object
+  st_set_crs(4326) 
+```
+
+
+# Antal unika linjer per hållplats per vardagsdygn
+
+```{r, warning=FALSE, message=FALSE}
+mapview(spdf1, zcol = "antal_linjer")
+
+```
+
+# Antal avgångar per hållplats per vardagsdygn
+
+```{r, warning=FALSE, message=FALSE}
+mapview(spdf1, zcol = "antal_dep_log")
+```
+
