@@ -34,40 +34,91 @@ dir.create("data_input")
 dir.create("data_output")
 dir.create("output")
 
+
 wd = getwd()
-api = "Z:/"
+
 data_input = paste0(wd,"/data_input")
 data_output = paste0(wd,"/data_output")
 output = paste0(wd,"/output")
+
+# path to github for shapefiles
+folder_github = "https://github.com/bjornsh/gis_data/raw/main/"
+
+```
+
+
+```{r, input variables}
+
+### url for GTFS
+# Specify RKM. 
+
+rkm = "ul" # !!!!!! Specify RKM. Available values : sl, ul, sormland, otraf, krono, klt, gotland, blekinge, skane, halland, vt, varm, orebro, vl, dt, xt, dintur, sj
+
+lan_kod = "03" # !!!!!! Specify län kod
 
 
 # todays date, used as filter
 today = str_remove_all(Sys.Date(), "-")
 
 
-## Read API keys
-api_fil <- read_file(paste0(api, "api"))
-
-trafiklab_key = gsub('^.*trafiklab_gtfsstatik: \\s*|\\s*\r.*$', "", api_fil)
-
-# url for GTFS
-url <- paste0("https://opendata.samtrafiken.se/gtfs/ul/ul.zip?key=", trafiklab_key)
+## Trafiklab key
+# api_fil <- read_file(paste0("Z:/api"))
+# trafiklab_key = gsub('^.*trafiklab_gtfsstatik: \\s*|\\s*\r.*$', "", api_fil)
+trafiklab_key = rstudioapi::askForPassword()
 
 ```
 
 
-```{r, include=FALSE}
+
+
+```{r results='hide', message=FALSE}
 #---------------------------------------------------------------------------------------------------
-# Fetch data
+# Fetch GTFS data 
 #---------------------------------------------------------------------------------------------------
 
 ## static GTFS timetable data from Trafiklab
+url <- paste0("https://opendata.samtrafiken.se/gtfs/", rkm, "/", rkm, ".zip?key=", trafiklab_key)
 
-GET(url, write_disk(paste0(data_input, "/trafiklab_ul.zip"), overwrite=TRUE))
+GET(url, write_disk(paste0(data_input, "/trafiklab_", rkm, ".zip"), overwrite=TRUE))
 
-unzip(paste0(data_input, "/trafiklab_ul.zip"), exdir = paste0(data_input, "/trafiklab_ul"))
+unzip(paste0(data_input, "/trafiklab_", rkm, ".zip"), exdir = paste0(data_input, "/trafiklab_", rkm))
+
 ```
 
+
+```{r results='hide', message=FALSE}
+#---------------------------------------------------------------------------------------------------
+# Fetch DeSO and filter shapefile 
+#---------------------------------------------------------------------------------------------------
+url_shp = paste0(folder_github, "scb/deso/deso_2018_v2.zip")
+download.file(url_shp, destfile = paste0(data_input, "/deso_2018_v2.zip"))
+unzip(paste0(data_input, "/deso_2018_v2.zip"), exdir = data_input)
+
+deso = st_read(paste0(data_input, "/DeSO_2018_v2.gpkg"))
+
+deso = filter(deso, lan == lan_kod) # extract data for Uppsala län
+
+mapview(deso)
+
+```
+
+&nbsp;
+
+```{r}
+#---------------------------------------------------------------------------------------------------
+# Create kommun boundaries based on DeSo boundaries 
+#---------------------------------------------------------------------------------------------------
+kommun = deso %>% 
+  filter(substr(kommun, 1, 2) == "03") %>% 
+  group_by(kommun, kommunnamn) %>% 
+  summarize(sp_geometry = st_union(sp_geometry)) %>% 
+  ungroup()
+
+mapview(kommun)
+
+```
+
+&nbsp;
 
 
 
@@ -77,19 +128,19 @@ unzip(paste0(data_input, "/trafiklab_ul.zip"), exdir = paste0(data_input, "/traf
 # load data
 #---------------------------------------------------------------------------------------------------
 
-routes = read.csv2(paste0(data_input, "/trafiklab_ul/routes.txt"), 
+routes = read.csv2(paste0(data_input, "/trafiklab_", rkm, "/routes.txt"), 
                    sep = ",", encoding="UTF-8", stringsAsFactors=FALSE)
 
-stops = read.csv2(paste0(data_input, "/trafiklab_ul/stops.txt"), 
+stops = read.csv2(paste0(data_input, "/trafiklab_", rkm, "/stops.txt"), 
                   sep = ",", encoding="UTF-8", stringsAsFactors=FALSE)
 
-stop_times = read.csv2(paste0(data_input, "/trafiklab_ul/stop_times.txt"), 
+stop_times = read.csv2(paste0(data_input, "/trafiklab_", rkm, "/stop_times.txt"), 
                        sep = ",", encoding="UTF-8", stringsAsFactors=FALSE)
 
-trips = read.csv2(paste0(data_input, "/trafiklab_ul/trips.txt"), 
+trips = read.csv2(paste0(data_input, "/trafiklab_", rkm, "/trips.txt"), 
                   sep = ",", encoding="UTF-8", stringsAsFactors=FALSE)
 
-calendar_dates = read.csv2(paste0(data_input, "/trafiklab_ul/calendar_dates.txt"), 
+calendar_dates = read.csv2(paste0(data_input, "/trafiklab_", rkm, "/calendar_dates.txt"), 
                            sep = ",", encoding="UTF-8", stringsAsFactors=FALSE)
 
 
@@ -141,16 +192,24 @@ hpl_koord = gtfs %>%
   ungroup() %>% 
   left_join(antal_departure, by = "hpl_id") %>% 
   left_join(antal_linjer, by = "hpl_id") %>% 
-  mutate(antal_dep_log = log(as.numeric(antal_dep)))
+  mutate(antal_dep_log = log10(as.numeric(antal_dep)))
 
+# create SF object
 xy_gtfs = hpl_koord[,c("lon", "lat")]
 
 spdf <- SpatialPointsDataFrame(coords = xy_gtfs, data = hpl_koord) # create spatial points
 
 spdf1 = st_as_sf(spdf) %>% # convert to sf object
-  st_set_crs(4326) 
+  st_set_crs(4326) %>% # set WGS84 as CRS
+  st_transform(3006) %>%  # convert to SWEREF99 for intersect with shapefiles
+  st_join(., deso) %>% # intersect with DeSO
+  select(-kommun, -lan, -kommunnamn, -lannamn) %>% 
+  st_join(., kommun) %>% # intersect with kommun
+  filter(!is.na(kommunnamn)) # remove hållplatser outside länet
+
 ```
 
+&nbsp;
 
 # Antal unika linjer per hållplats per vardagsdygn
 
@@ -159,9 +218,66 @@ mapview(spdf1, zcol = "antal_linjer")
 
 ```
 
-# Antal avgångar per hållplats per vardagsdygn
+&nbsp;
+
+# Antal avgångar (log10) per hållplats per vardagsdygn
 
 ```{r, warning=FALSE, message=FALSE}
 mapview(spdf1, zcol = "antal_dep_log")
 ```
+
+&nbsp;
+
+# Antal hållplatser per kommun
+
+```{r}
+kommun %>% 
+  left_join(., 
+            spdf1 %>% 
+              as.data.frame() %>% 
+              group_by(kommunnamn) %>% 
+              summarise(antal_hpl_kommun = n()) %>% 
+              filter(!is.na(kommunnamn)), by = "kommunnamn") %>% 
+  mapview(., zcol = "antal_hpl_kommun")
+
+```
+
+&nbsp;
+
+# Antal hållplatser per DeSO
+
+```{r}
+deso %>% 
+  left_join(., 
+            spdf1 %>% 
+              as.data.frame() %>% 
+              group_by(deso) %>% 
+              summarise(antal_hpl_deso = n()) %>% 
+              filter(!is.na(deso))  # remove hpl outside län
+              #arrange(antal_hpl_deso)
+              , by = "deso") %>% 
+  mutate(antal_hpl_deso = replace_na(antal_hpl_deso, 0)) %>%  # join shows DeSO without hpl, assign value "0"
+  mapview(., zcol = "antal_hpl_deso")
+```
+
+&nbsp;
+
+# Antal hållplatser per km2 DeSO yta
+```{r}
+deso %>% 
+  mutate(area_km2 = round(as.numeric(sub(" .*", "", st_area(.) / 1000000)), 2)) %>% 
+  left_join(., 
+            spdf1 %>% 
+              as.data.frame() %>% 
+              group_by(deso) %>% 
+              summarise(antal_hpl_deso = n()) %>% 
+              filter(!is.na(deso))  # remove hpl outside län
+              #arrange(antal_hpl_deso)
+              , by = "deso") %>% 
+  mutate(antal_hpl_deso = replace_na(antal_hpl_deso, 0),
+         antal_hpl_deso_km2 = antal_hpl_deso / area_km2) %>%  # join shows DeSO without hpl, assign value "0"
+  mapview(., zcol = "antal_hpl_deso_km2")
+```
+
+
 
