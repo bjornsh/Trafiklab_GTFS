@@ -5,3 +5,5 @@
 data_input/
 data_output/
 output/
+*.zip
+*.txt
