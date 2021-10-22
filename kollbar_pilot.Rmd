@@ -21,7 +21,7 @@ options(dplyr.summarise.inform = FALSE)
 
 # libraries
 if (!require("pacman")) install.packages("pacman")
-pacman::p_load(tidyverse, sf, sp, httr, mapview)
+pacman::p_load(tidyverse, sf, sp, httr, mapview, leaflet)
 
 
 
@@ -101,6 +101,7 @@ deso = filter(deso, lan == lan_kod) # extract data for Uppsala län
 mapview(deso)
 
 ```
+
 
 &nbsp;
 
@@ -218,6 +219,16 @@ mapview(spdf1, zcol = "antal_linjer")
 
 ```
 
+
+
+
+
+
+
+
+
+
+
 &nbsp;
 
 # Antal avgångar (log10) per hållplats per vardagsdygn
@@ -241,6 +252,60 @@ kommun %>%
   mapview(., zcol = "antal_hpl_kommun")
 
 ```
+
+
+# Same map but with leaflet package which gives more control
+```{r}
+
+
+karta_kommun = kommun %>% 
+  left_join(., 
+            spdf1 %>% 
+              as.data.frame() %>% 
+              group_by(kommunnamn) %>% 
+              summarise(antal_hpl_kommun = n()) %>% 
+              filter(!is.na(kommunnamn)), by = "kommunnamn") %>%
+  st_transform(4326) 
+  
+
+pal <- colorNumeric(
+  palette = "Blues",
+  domain = karta_kommun$antal_hpl_kommun)
+
+
+
+leaflet(karta_kommun) %>%
+  addTiles(urlTemplate = 'http://{s}.tile.opentopomap.org/{z}/{x}/{y}.png') %>%
+    addPolygons(fillColor = ~pal(antal_hpl_kommun),
+                fillOpacity = 0.9,
+                popup = ~paste(antal_hpl_kommun, "hållplatser finns i", kommunnamn, "kommun")) %>%   
+  addLegend(pal = pal, 
+            values = ~antal_hpl_kommun, 
+            # labFormat = labelFormat(suffix = "%",
+            #                         transform = function(x) 100 * x),
+            title = "Hållplaster", position = "bottomright")
+
+```
+
+
+```{r}
+# Leaflet map for export as image
+
+export_karta_kommun = leaflet(karta_kommun) %>%
+  addTiles(urlTemplate = 'http://{s}.tile.opentopomap.org/{z}/{x}/{y}.png') %>%
+    addPolygons(fillColor = ~pal(antal_hpl_kommun),
+                fillOpacity = 0.9) %>% 
+  addLegend(pal = pal, 
+            values = ~antal_hpl_kommun, 
+            # labFormat = labelFormat(suffix = "%",
+            #                         transform = function(x) 100 * x),
+            title = "Hållplaster", position = "bottomright")
+
+mapshot(export_karta_kommun, file = paste0(output, "/karta_kommun_hpl.png"))
+```
+
+
+
 
 &nbsp;
 
