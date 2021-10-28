@@ -52,9 +52,9 @@ folder_github = "https://github.com/bjornsh/gis_data/raw/main/"
 ### url for GTFS
 # Specify RKM. 
 
-rkm = "ul" # !!!!!! Specify RKM. Available values : sl, ul, sormland, otraf, krono, klt, gotland, blekinge, skane, halland, vt, varm, orebro, vl, dt, xt, dintur, sj
+rkm = "dt" # !!!!!! Specify RKM. Available values : sl, ul, sormland, otraf, krono, klt, gotland, blekinge, skane, halland, vt, varm, orebro, vl, dt, xt, dintur, sj
 
-lan_kod = "03" # !!!!!! Specify län kod
+lan_kod = "20" # !!!!!! Specify län kod, Uppsala = 03, Dalarna = 20
 
 
 # todays date, used as filter
@@ -110,7 +110,7 @@ mapview(deso)
 # Create kommun boundaries based on DeSo boundaries 
 #---------------------------------------------------------------------------------------------------
 kommun = deso %>% 
-  filter(substr(kommun, 1, 2) == "03") %>% 
+  filter(substr(kommun, 1, 2) == lan_kod) %>% 
   group_by(kommun, kommunnamn) %>% 
   summarize(sp_geometry = st_union(sp_geometry)) %>% 
   ungroup()
@@ -144,7 +144,9 @@ trips = read.csv2(paste0(data_input, "/trafiklab_", rkm, "/trips.txt"),
 calendar_dates = read.csv2(paste0(data_input, "/trafiklab_", rkm, "/calendar_dates.txt"), 
                            sep = ",", encoding="UTF-8", stringsAsFactors=FALSE)
 
-
+# linjenät koordinater
+shapes = read.csv2(paste0(data_input, "/trafiklab_", rkm, "/shapes.txt"), 
+                           sep = ",", encoding="UTF-8", stringsAsFactors=FALSE)
 
 ### Create filter variables
 
@@ -218,10 +220,6 @@ spdf1 = st_as_sf(spdf) %>% # convert to sf object
 mapview(spdf1, zcol = "antal_linjer")
 
 ```
-
-
-
-
 
 
 
@@ -342,6 +340,55 @@ deso %>%
   mutate(antal_hpl_deso = replace_na(antal_hpl_deso, 0),
          antal_hpl_deso_km2 = antal_hpl_deso / area_km2) %>%  # join shows DeSO without hpl, assign value "0"
   mapview(., zcol = "antal_hpl_deso_km2")
+```
+
+
+## Line network
+
+```{r}
+# En linje kan följa olika vägsträckor. Här identifieras den vanligaste vägsträckan per linje
+
+line_shapeid = gtfs %>% 
+  group_by(route_short_name, shape_id) %>% 
+  summarise(n = n()) %>% 
+  filter(n == max(n)) %>% # det kan finnas 
+  ungroup() %>% 
+  select(-n)
+
+shapeid_inklud = line_shapeid %>% select(shape_id) %>% pull()
+
+# create SF object
+xy_shapes = shapes %>%
+  filter(shape_id %in% shapeid_inklud) %>% 
+  select("shape_pt_lon", "shape_pt_lat") %>% 
+  mutate_if(is.character,as.numeric)
+
+# create spatial points
+sp_shapes <- SpatialPointsDataFrame(coords = xy_shapes, 
+                                    data = filter(shapes,shape_id %in% shapeid_inklud)) # must be same nrow as xy_shapes
+
+
+
+
+sp_shapes1 = st_as_sf(sp_shapes) %>% # convert to sf object
+#  filter(shape_id == "1" | shape_id == "3") %>% # CREATE TEST DATA
+  st_set_crs(4326) %>% # set WGS84 as CRS
+  st_transform(3006) # convert to SWEREF99 for intersect with shapefiles
+
+# mapview(sp_shapes1)
+
+all_lines = sp_shapes1 %>% 
+  group_by(shape_id) %>% 
+  summarise(do_union = FALSE) %>% 
+  st_cast("LINESTRING") %>% 
+  left_join(., line_shapeid, by = "shape_id")
+
+
+#### lägg till tätorts (>= 90% hpl inom tätort) vs regiontrafik (< 90% hpl inom tätort) 
+
+
+mapview(all_lines)
+
 ```
 
 
