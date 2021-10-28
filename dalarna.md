@@ -1,12 +1,7 @@
----
-title: "Trafiklab GTFS data"
-output: github_document
-keep_md: true
----
+Trafiklab GTFS data
+================
 
-
-
-```{r, warning=FALSE, message=FALSE}
+``` r
 #---------------------------------------------------------------------------------------------------
 # set up
 #---------------------------------------------------------------------------------------------------
@@ -43,12 +38,9 @@ output = paste0(wd,"/output")
 
 # path to github for shapefiles
 folder_github = "https://github.com/bjornsh/gis_data/raw/main/"
-
 ```
 
-
-```{r, input variables}
-
+``` r
 ### url for GTFS
 # Specify RKM. 
 
@@ -65,13 +57,9 @@ today = str_remove_all(Sys.Date(), "-")
 # api_fil <- read_file(paste0("Z:/api"))
 # trafiklab_key = gsub('^.*trafiklab_gtfsstatik: \\s*|\\s*\r.*$', "", api_fil)
 trafiklab_key = rstudioapi::askForPassword()
-
 ```
 
-
-
-
-```{r results='hide', message=FALSE}
+``` r
 #---------------------------------------------------------------------------------------------------
 # Fetch GTFS data 
 #---------------------------------------------------------------------------------------------------
@@ -80,13 +68,13 @@ trafiklab_key = rstudioapi::askForPassword()
 url <- paste0("https://opendata.samtrafiken.se/gtfs/", rkm, "/", rkm, ".zip?key=", trafiklab_key)
 
 GET(url, write_disk(paste0(data_input, "/trafiklab_", rkm, ".zip"), overwrite=TRUE))
-
-unzip(paste0(data_input, "/trafiklab_", rkm, ".zip"), exdir = paste0(data_input, "/trafiklab_", rkm))
-
 ```
 
+``` r
+unzip(paste0(data_input, "/trafiklab_", rkm, ".zip"), exdir = paste0(data_input, "/trafiklab_", rkm))
+```
 
-```{r results='hide', message=FALSE}
+``` r
 #---------------------------------------------------------------------------------------------------
 # Fetch DeSO and filter shapefile 
 #---------------------------------------------------------------------------------------------------
@@ -99,13 +87,13 @@ deso = st_read(paste0(data_input, "/DeSO_2018_v2.gpkg"))
 deso = filter(deso, lan == lan_kod) # extract data for Uppsala län
 
 mapview(deso)
-
 ```
 
+![](kollbar_pilot_files/figure-gfm/unnamed-chunk-3-1.png)<!-- -->
 
-&nbsp;
+ 
 
-```{r}
+``` r
 #---------------------------------------------------------------------------------------------------
 # Create kommun boundaries based on DeSo boundaries 
 #---------------------------------------------------------------------------------------------------
@@ -116,15 +104,13 @@ kommun = deso %>%
   ungroup()
 
 mapview(kommun)
-
 ```
 
-&nbsp;
+![](kollbar_pilot_files/figure-gfm/unnamed-chunk-4-1.png)<!-- -->
 
+ 
 
-
-```{r, warning=FALSE, message=FALSE}
-
+``` r
 #---------------------------------------------------------------------------------------------------
 # load data
 #---------------------------------------------------------------------------------------------------
@@ -172,8 +158,7 @@ gtfs = stop_times %>%
   distinct(arrival_time, departure_time, stop_id, .keep_all= TRUE) # remove duplicates
 ```
 
-
-```{r, warning=FALSE, message=FALSE}
+``` r
 #---------------------------------------------------------------------------------------------------
 # Data hantering
 #---------------------------------------------------------------------------------------------------
@@ -209,37 +194,33 @@ spdf1 = st_as_sf(spdf) %>% # convert to sf object
   select(-kommun, -lan, -kommunnamn, -lannamn) %>% 
   st_join(., kommun) %>% # intersect with kommun
   filter(!is.na(kommunnamn)) # remove hållplatser outside länet
-
 ```
 
-&nbsp;
+ 
 
 # Antal unika linjer per hållplats per vardagsdygn
 
-```{r, warning=FALSE, message=FALSE}
+``` r
 mapview(spdf1, zcol = "antal_linjer")
-
 ```
 
+![](kollbar_pilot_files/figure-gfm/unnamed-chunk-7-1.png)<!-- -->
 
-
-
-
-
-
-&nbsp;
+ 
 
 # Antal avgångar (log10) per hållplats per vardagsdygn
 
-```{r, warning=FALSE, message=FALSE}
+``` r
 mapview(spdf1, zcol = "antal_dep_log")
 ```
 
-&nbsp;
+![](kollbar_pilot_files/figure-gfm/unnamed-chunk-8-1.png)<!-- -->
+
+ 
 
 # Antal hållplatser per kommun
 
-```{r}
+``` r
 kommun %>% 
   left_join(., 
             spdf1 %>% 
@@ -248,14 +229,13 @@ kommun %>%
               summarise(antal_hpl_kommun = n()) %>% 
               filter(!is.na(kommunnamn)), by = "kommunnamn") %>% 
   mapview(., zcol = "antal_hpl_kommun")
-
 ```
 
+![](kollbar_pilot_files/figure-gfm/unnamed-chunk-9-1.png)<!-- -->
 
 # Same map but with leaflet package which gives more control
-```{r}
 
-
+``` r
 karta_kommun = kommun %>% 
   left_join(., 
             spdf1 %>% 
@@ -282,11 +262,11 @@ leaflet(karta_kommun) %>%
             # labFormat = labelFormat(suffix = "%",
             #                         transform = function(x) 100 * x),
             title = "Hållplaster", position = "bottomright")
-
 ```
 
+![](kollbar_pilot_files/figure-gfm/unnamed-chunk-10-1.png)<!-- -->
 
-```{r}
+``` r
 # Leaflet map for export as image
 
 export_karta_kommun = leaflet(karta_kommun) %>%
@@ -302,14 +282,11 @@ export_karta_kommun = leaflet(karta_kommun) %>%
 mapshot(export_karta_kommun, file = paste0(output, "/karta_kommun_hpl.png"))
 ```
 
-
-
-
-&nbsp;
+ 
 
 # Antal hållplatser per DeSO
 
-```{r}
+``` r
 deso %>% 
   left_join(., 
             spdf1 %>% 
@@ -323,10 +300,13 @@ deso %>%
   mapview(., zcol = "antal_hpl_deso")
 ```
 
-&nbsp;
+![](kollbar_pilot_files/figure-gfm/unnamed-chunk-12-1.png)<!-- -->
+
+ 
 
 # Antal hållplatser per km2 DeSO yta
-```{r}
+
+``` r
 deso %>% 
   mutate(area_km2 = round(as.numeric(sub(" .*", "", st_area(.) / 1000000)), 2)) %>% 
   left_join(., 
@@ -342,10 +322,11 @@ deso %>%
   mapview(., zcol = "antal_hpl_deso_km2")
 ```
 
+![](kollbar_pilot_files/figure-gfm/unnamed-chunk-13-1.png)<!-- -->
 
 ## Line network
 
-```{r}
+``` r
 # En linje kan följa olika vägsträckor. Här identifieras den vanligaste vägsträckan per linje
 
 line_shapeid = gtfs %>% 
@@ -388,8 +369,6 @@ all_lines = sp_shapes1 %>%
 
 
 mapview(all_lines)
-
 ```
 
-
-
+![](kollbar_pilot_files/figure-gfm/unnamed-chunk-14-1.png)<!-- -->
