@@ -1,12 +1,12 @@
 ---
 title: "Trafiklab GTFS data"
-output: github_document
+output: html_document
 #keep_md: true
 ---
 
 
 
-```{r, warning=FALSE, message=FALSE}
+```{r, setup, warning=FALSE, message=FALSE}
 #---------------------------------------------------------------------------------------------------
 # set up
 #---------------------------------------------------------------------------------------------------
@@ -58,9 +58,9 @@ folder_github = "https://github.com/bjornsh/gis_data/raw/main/"
 ### url for GTFS
 # Specify RKM. 
 
-rkm = "dt" # !!!!!! Specify RKM. Available values : sl, ul, sormland, otraf, krono, klt, gotland, blekinge, skane, halland, vt, varm, orebro, vl, dt, xt, dintur, sj
+rkm = "blekinge" # !!!!!! Specify RKM. Available values : sl, ul, sormland, otraf, krono, klt, gotland, blekinge, skane, halland, vt, varm, orebro, vl, dt, xt, dintur, sj
 
-lan_kod = "20" # !!!!!! Specify län kod, Uppsala = 03, Dalarna = 20
+lan_kod = "10" # !!!!!! Specify län kod, Uppsala = 03, Dalarna = 20, Blekinge = 10
 
 
 # todays date, used as filter
@@ -95,7 +95,7 @@ unzip(paste0(data_input, "/trafiklab_", rkm, ".zip"), exdir = paste0(data_input,
 
 ## DeSO
 
-```{r results='hide', message=FALSE}
+```{r}
 #---------------------------------------------------------------------------------------------------
 # Fetch DeSO and filter shapefile 
 #---------------------------------------------------------------------------------------------------
@@ -105,7 +105,7 @@ unzip(paste0(data_input, "/deso_2018_v2.zip"), exdir = data_input)
 
 deso = st_read(paste0(data_input, "/DeSO_2018_v2.gpkg"))
 
-deso = filter(deso, lan == lan_kod) # extract data for Uppsala län
+deso = filter(deso, lan == lan_kod) # extract data for län
 
 mapview(deso, 
         legend = FALSE,
@@ -422,11 +422,10 @@ linjenat_kommun
 ```
 
 
-```{r}
-# spara filer
+```{r, results='hide'}
+### spara filer
 
 # HTML karta
-
 dir.create(paste0(output, "/", rkm))
 
 mapshot(linjenat_kommun, url = paste0(output, "/", rkm,
