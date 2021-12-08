@@ -1,7 +1,7 @@
 ---
 title: "Trafiklab GTFS data"
 output: github_document
-keep_md: true
+#keep_md: true
 ---
 
 
@@ -17,6 +17,12 @@ invisible(gc())
 
 
 options(dplyr.summarise.inform = FALSE)
+
+knitr::opts_chunk$set(
+  #echo       = FALSE,
+  message    = FALSE,
+  warning    = FALSE
+)
 
 
 # libraries
@@ -62,9 +68,9 @@ today = str_remove_all(Sys.Date(), "-")
 
 
 ## Trafiklab key
-# api_fil <- read_file(paste0("Z:/api"))
-# trafiklab_key = gsub('^.*trafiklab_gtfsstatik: \\s*|\\s*\r.*$', "", api_fil)
-trafiklab_key = rstudioapi::askForPassword()
+api_fil <- read_file(paste0("Z:/api"))
+trafiklab_key = gsub('^.*trafiklab_gtfsstatik: \\s*|\\s*\r.*$', "", api_fil)
+# trafiklab_key = rstudioapi::askForPassword()
 
 ```
 
@@ -85,6 +91,9 @@ unzip(paste0(data_input, "/trafiklab_", rkm, ".zip"), exdir = paste0(data_input,
 
 ```
 
+&nbsp;
+
+## DeSO
 
 ```{r results='hide', message=FALSE}
 #---------------------------------------------------------------------------------------------------
@@ -98,12 +107,17 @@ deso = st_read(paste0(data_input, "/DeSO_2018_v2.gpkg"))
 
 deso = filter(deso, lan == lan_kod) # extract data for Uppsala län
 
-mapview(deso)
-
+mapview(deso, 
+        legend = FALSE,
+        alpha.regions = 0,
+        lwd = 2)
 ```
 
 
 &nbsp;
+
+
+## Kommungränser baserat på DeSO 
 
 ```{r}
 #---------------------------------------------------------------------------------------------------
@@ -115,7 +129,10 @@ kommun = deso %>%
   summarize(sp_geometry = st_union(sp_geometry)) %>% 
   ungroup()
 
-mapview(kommun)
+mapview(kommun,
+        legend = FALSE,
+        alpha.regions = 0,
+        lwd = 2)
 
 ```
 
@@ -217,13 +234,11 @@ spdf1 = st_as_sf(spdf) %>% # convert to sf object
 # Antal unika linjer per hållplats per vardagsdygn
 
 ```{r, warning=FALSE, message=FALSE}
-mapview(spdf1, zcol = "antal_linjer")
+mapview(spdf1, 
+        zcol = "antal_linjer",
+        layer.name = "Antal linjer")
 
 ```
-
-
-
-
 
 
 
@@ -232,8 +247,12 @@ mapview(spdf1, zcol = "antal_linjer")
 # Antal avgångar (log10) per hållplats per vardagsdygn
 
 ```{r, warning=FALSE, message=FALSE}
-mapview(spdf1, zcol = "antal_dep_log")
+mapview(spdf1, 
+        zcol = "antal_dep_log",
+        layer.name = "Antal avgångar (log)")
 ```
+
+
 
 &nbsp;
 
@@ -247,14 +266,17 @@ kommun %>%
               group_by(kommunnamn) %>% 
               summarise(antal_hpl_kommun = n()) %>% 
               filter(!is.na(kommunnamn)), by = "kommunnamn") %>% 
-  mapview(., zcol = "antal_hpl_kommun")
+  mapview(., 
+          zcol = "antal_hpl_kommun",
+          layer.name = "Hpl per kommun")
 
 ```
 
 
-# Same map but with leaflet package which gives more control
-```{r}
 
+```{r, eval=FALSE, results='hide', include=FALSE}
+
+# # Same map but with leaflet package which gives more control
 
 karta_kommun = kommun %>% 
   left_join(., 
@@ -286,7 +308,7 @@ leaflet(karta_kommun) %>%
 ```
 
 
-```{r}
+```{r, eval=FALSE, include=FALSE}
 # Leaflet map for export as image
 
 export_karta_kommun = leaflet(karta_kommun) %>%
@@ -317,10 +339,11 @@ deso %>%
               group_by(deso) %>% 
               summarise(antal_hpl_deso = n()) %>% 
               filter(!is.na(deso))  # remove hpl outside län
-              #arrange(antal_hpl_deso)
               , by = "deso") %>% 
   mutate(antal_hpl_deso = replace_na(antal_hpl_deso, 0)) %>%  # join shows DeSO without hpl, assign value "0"
-  mapview(., zcol = "antal_hpl_deso")
+  mapview(., 
+          zcol = "antal_hpl_deso",
+          layer.name = "Hpl per DeSO")
 ```
 
 &nbsp;
@@ -338,12 +361,14 @@ deso %>%
               #arrange(antal_hpl_deso)
               , by = "deso") %>% 
   mutate(antal_hpl_deso = replace_na(antal_hpl_deso, 0),
-         antal_hpl_deso_km2 = antal_hpl_deso / area_km2) %>%  # join shows DeSO without hpl, assign value "0"
-  mapview(., zcol = "antal_hpl_deso_km2")
+         antal_hpl_deso_km2 = round(antal_hpl_deso / area_km2, 2)) %>%  # join shows DeSO without hpl, assign value "0"
+  mapview(., 
+          zcol = "antal_hpl_deso_km2",
+          layer.name = "Hpl per km2 DeSO")
 ```
 
 
-## Line network
+## Kollektivtrafik linjenät
 
 ```{r}
 # En linje kan följa olika vägsträckor. Här identifieras den vanligaste vägsträckan per linje
@@ -368,15 +393,12 @@ sp_shapes <- SpatialPointsDataFrame(coords = xy_shapes,
                                     data = filter(shapes,shape_id %in% shapeid_inklud)) # must be same nrow as xy_shapes
 
 
-
-
-sp_shapes1 = st_as_sf(sp_shapes) %>% # convert to sf object
-#  filter(shape_id == "1" | shape_id == "3") %>% # CREATE TEST DATA
+# convert to sf object
+sp_shapes1 = st_as_sf(sp_shapes) %>% 
   st_set_crs(4326) %>% # set WGS84 as CRS
   st_transform(3006) # convert to SWEREF99 for intersect with shapefiles
 
-# mapview(sp_shapes1)
-
+# skapa linjer från punktkoordinater
 all_lines = sp_shapes1 %>% 
   group_by(shape_id) %>% 
   summarise(do_union = FALSE) %>% 
@@ -384,12 +406,112 @@ all_lines = sp_shapes1 %>%
   left_join(., line_shapeid, by = "shape_id")
 
 
-#### lägg till tätorts (>= 90% hpl inom tätort) vs regiontrafik (< 90% hpl inom tätort) 
+# Karta
+linjenat_kommun = mapview(kommun,
+        alpha.region = 0,
+        lwd = 2,
+        color = "red",
+        legend = FALSE) + 
+  mapview(all_lines,
+          legend = FALSE,
+          color = "black")
+  
 
-
-mapview(all_lines)
+linjenat_kommun
 
 ```
 
+
+```{r}
+# spara filer
+
+# HTML karta
+
+dir.create(paste0(output, "/", rkm))
+
+mapshot(linjenat_kommun, url = paste0(output, "/", rkm,
+                                      "/linjenat_kommun_",
+                                      rkm, "_", Sys.Date(), ".html"))
+
+# Shapefil
+st_write(all_lines, paste0(output, "/", rkm, 
+                           "/alla_linjer_", 
+                           rkm, "_", Sys.Date(), ".shp"))
+
+
+```
+
+
+
+
+
+
+
+
+
+
+
+```{r eval=FALSE, echo=FALSE, include=FALSE}
+## aggregate overlapping lines
+# https://gis.stackexchange.com/questions/139681/overlaying-lines-and-aggregating-their-values-for-overlapping-segments-using-r
+
+pkgs <- c("geojsonio", "leaflet", "sp")
+lapply(pkgs, library, character.only = T)
+download.file("https://raw.githubusercontent.com/codeforgermany/click_that_hood/main/public/data/airports.geojson", 
+              destfile = "airport.geojson", 
+              method = "curl")
+
+
+islines <- function(g1, g2){
+    ## return TRUE if geometries intersect as lines, not points
+    inherits(gIntersection(g1,g2),"SpatialLines")
+}
+
+sections <- function(sl){
+    ## union and merge and disaggregate to make a
+    ## set of non-overlapping line segments
+    disaggregate(gLineMerge(gUnion(sl,sl)))
+}
+
+aggit <- function(sldf, attr, fun=sum){
+    ## simplify down to SpatialLines
+    sl = as(sldf, "SpatialLines")
+    ## get the line sections that make the network
+    slu = sections(sl)
+    ## overlay network with routes
+    overs = over(slu, sl, returnList=TRUE)
+    ## overlay is true if end points overlay, so filter them out:
+    overs = lapply(1:length(overs), function(islu){
+        Filter(function(isl){
+            islines(sl[isl,],slu[islu,])
+        }, overs[[islu]])
+    })
+    ## now aggregate the required attribute using fun():
+    aggs = sapply(overs, function(os){fun(sldf[[attr]][os])})
+
+    ## make a SLDF with the named attribute:
+    sldf = SpatialLinesDataFrame(slu, data.frame(Z=aggs))
+    names(sldf)=attr
+    sldf
+}
+
+lineLabels <- function(sldf, attr){
+    text(coordinates(gCentroid(sldf,byid=TRUE)),labels=sldf[[attr]])
+}
+
+# library(geojsonR)
+# r = FROM_GeoJson(url_file_string = paste0(getwd(), "/airport.geojson"))
+# 
+# r <- geojsonio::geojson_read("airport.geojson")
+# 
+# r <- readOGR(dsn=paste0(getwd(), "/airport.geojson"), layer = "OGRGeoJSON")
+# maine <- readOGR(dsn="/data/maine.geojson", layer="OGRGeoJSON")
+# 
+# ag = aggit(r,"All")
+# plot(ag)
+# lineLabels(ag,"All")
+
+
+```
 
 
